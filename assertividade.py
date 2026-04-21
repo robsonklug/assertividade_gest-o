@@ -135,7 +135,10 @@ else:
     if menu_selection == "Histórico de Pesagens":
         # --- VISÃO 1: HISTÓRICO DE PESAGENS ---
         st.header("Histórico de Apontamentos por Ordem de Produção")
-        st.markdown("Lista das OPs executadas para a receita **Ficha #1024 - Azul Marinho** no período selecionado.")
+        
+        # Campo de seleção com opção única, substituindo o texto fixo anterior
+        receita_selecionada = st.selectbox("Selecione a Receita:", options=["Ficha #1024 - Azul Marinho"])
+        st.markdown(f"Lista das OPs executadas para a receita **{receita_selecionada}** no período selecionado.")
         
         # Filtro opcional adicional por OP
         op_filtro = st.multiselect("Filtrar por Ordem de Produção:", options=df_pesagens["Ordem de Produção"].unique())
