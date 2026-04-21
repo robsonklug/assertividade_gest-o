@@ -3,9 +3,11 @@ import pandas as pd
 import numpy as np
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="ERP Têxtil - Gestão de Pesagens", layout="wide")
+# Renomeação do título da página
+st.set_page_config(page_title="Gestão de consumo de materiais", layout="wide")
 
 # --- GERAÇÃO DE DADOS MOCK (10 OPs com a mesma receita e divergências) ---
+# Função ajustada para remover os ícones dos status
 @st.cache_data
 def gerar_dados_pesagem():
     # Preços para cálculo de perda
@@ -37,13 +39,13 @@ def gerar_dados_pesagem():
             # Custo gerado (apenas se pesou a mais. Se pesou a menos, o custo é de qualidade/reprocesso)
             custo_perda = desvio_kg * precos[comp["cod"]] if desvio_kg > 0 else 0.0
             
-            # Definindo status com base em tolerância de 1%
+            # Definindo status limpos (sem ícones) com base em tolerância de 1%
             if abs(desvio_perc) <= 1.0:
-                status = "✅ OK"
+                status = "OK"
             elif desvio_perc > 1.0:
-                status = "⚠️ Excesso"
+                status = "Excesso"
             else:
-                status = "❌ Falta"
+                status = "Falta"
 
             dados.append({
                 "Ordem de Produção": op,
@@ -62,15 +64,42 @@ def gerar_dados_pesagem():
 # Carrega os dados
 df_pesagens = gerar_dados_pesagem()
 
+# --- MENU LATERAL ESQUERDO ---
+# Adição do texto "TOTVS" no mesmo formato e tipo de letra do modelo
+# Usamos HTML para garantir a formatação: negrito, cor escura e fonte sans-serif
+st.sidebar.markdown(
+    """
+    <div style='display: flex; align-items: center; margin-bottom: 20px;'>
+        <h1 style='color: rgba(32, 32, 32, 1); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"; font-weight: bold; margin: 0;'>TOTVS</h1>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+# Criação do menu lateral com as opções das antigas abas (sem ícones)
+menu_selection = st.sidebar.radio(
+    "Módulos de Gestão",
+    options=["Histórico de Pesagens (Auditoria)", "Gestão de Performance e Perdas"],
+    index=0
+)
+
 # --- INTERFACE PRINCIPAL ---
-st.title("🏭 ERP Têxtil - Gestão de Cozinha de Cores")
+# Título renomeado e sem ícone
+st.title("Gestão de consumo de materiais")
 st.markdown("---")
 
-# Criando as abas solicitadas
-aba1, aba2 = st.tabs(["📋 Histórico de Pesagens (Auditoria)", "📈 Gestão de Performance e Perdas"])
+# Função de coloração da tabela ajustada para os novos status limpos
+def colorir_linhas(row):
+    if row["Status"] == "Excesso":
+        return ['background-color: #ffcccc'] * len(row)
+    elif row["Status"] == "Falta":
+        return ['background-color: #ffe6cc'] * len(row)
+    return [''] * len(row)
 
-# --- ABA 1: LISTAGEM DE OPERAÇÕES DE PESAGEM ---
-with aba1:
+# Lógica de exibição baseada na seleção do menu lateral
+if menu_selection == "Histórico de Pesagens (Auditoria)":
+    # --- VISÃO 1: HISTÓRICO DE PESAGENS ---
+    # Título sem ícone
     st.header("Histórico de Apontamentos por Ordem de Produção")
     st.markdown("Lista das últimas 10 OPs executadas para a receita **Ficha #1024 - Azul Marinho**. Compare o padrão teórico com o peso real aferido na balança.")
     
@@ -78,14 +107,6 @@ with aba1:
     op_filtro = st.multiselect("Filtrar por Ordem de Produção:", options=df_pesagens["Ordem de Produção"].unique())
     df_exibicao = df_pesagens if not op_filtro else df_pesagens[df_pesagens["Ordem de Produção"].isin(op_filtro)]
     
-    # Função para colorir a tabela
-    def colorir_linhas(row):
-        if "Excesso" in row["Status"]:
-            return ['background-color: #ffcccc'] * len(row)
-        elif "Falta" in row["Status"]:
-            return ['background-color: #ffe6cc'] * len(row)
-        return [''] * len(row)
-
     # Exibindo o DataFrame estilizado
     st.dataframe(
         df_exibicao.style.apply(colorir_linhas, axis=1).format({
@@ -99,15 +120,16 @@ with aba1:
         height=500
     )
 
-# --- ABA 2: GESTÃO DE PERFORMANCE E PERDAS ---
-with aba2:
+elif menu_selection == "Gestão de Performance e Perdas":
+    # --- VISÃO 2: GESTÃO DE PERFORMANCE E PERDAS ---
+    # Título sem ícone
     st.header("Dashboard de Performance e Perdas Financeiras")
     
-    # Métricas Globais
+    # Métricas Globais (ícones já estavam ausentes)
     total_ops = df_pesagens["Ordem de Produção"].nunique()
     custo_total_perdas = df_pesagens["Custo Desperdício (R$)"].sum()
     desvio_maximo = df_pesagens["Desvio (%)"].max()
-    acertos = df_pesagens[df_pesagens["Status"] == "✅ OK"].shape[0]
+    acertos = df_pesagens[df_pesagens["Status"] == "OK"].shape[0]
     total_pesagens = df_pesagens.shape[0]
     taxa_assertividade = (acertos / total_pesagens) * 100
 
