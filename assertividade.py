@@ -131,18 +131,25 @@ with aba2:
         st.subheader("Resumo de Perdas por Componente")
         st.markdown("Visão financeira dos excessos de dosagem.")
         
-        # Agrupando dados para resumo
+        # Agrupando dados para resumo com nomes de variáveis válidos no Python
         df_resumo = df_pesagens.groupby("Componente").agg(
-            Total_Padrão_kg=("Padrão (kg)", "sum"),
+            Total_Padrao_kg=("Padrão (kg)", "sum"),
             Total_Realizado_kg=("Realizado (kg)", "sum"),
-            Custo_Perda_R$=("Custo Desperdício (R$)", "sum")
+            Custo_Perda_Reais=("Custo Desperdício (R$)", "sum")
         ).reset_index()
+        
+        # Renomeando as colunas para exibição na tela
+        df_resumo = df_resumo.rename(columns={
+            "Total_Padrao_kg": "Total Padrão (kg)",
+            "Total_Realizado_kg": "Total Realizado (kg)",
+            "Custo_Perda_Reais": "Custo Perda (R$)"
+        })
         
         st.dataframe(
             df_resumo.style.format({
-                "Total_Padrão_kg": "{:.2f}",
-                "Total_Realizado_kg": "{:.2f}",
-                "Custo_Perda_R$": "R$ {:.2f}"
+                "Total Padrão (kg)": "{:.2f}",
+                "Total Realizado (kg)": "{:.2f}",
+                "Custo Perda (R$)": "R$ {:.2f}"
             }),
             use_container_width=True
         )
