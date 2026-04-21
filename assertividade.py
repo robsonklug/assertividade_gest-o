@@ -1,113 +1,152 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="ERP Têxtil - Módulo de Assertividade", layout="wide")
+st.set_page_config(page_title="ERP Têxtil - Gestão de Pesagens", layout="wide")
 
-# --- PILAR 4: BASE DE DATOS FIXA (MOCK DATA) ---
-if 'db_insumos' not in st.session_state:
-    st.session_state.db_insumos = pd.DataFrame({
-        'Codigo': ['COR-450', 'COR-120', 'QUIM-001', 'QUIM-088', 'QUIM-015'],
-        'Descricao': ['Azul Reativo RGB', 'Preto Reativo B', 'Umectante T-2', 'Sal de Cozinha', 'Barrilha Leve'],
-        'Estoque_kg': [50.0, 30.0, 100.0, 500.0, 250.0],
-        'Preco_kg': [120.50, 95.00, 12.30, 1.50, 4.20]
-    })
+# --- GERAÇÃO DE DADOS MOCK (10 OPs com a mesma receita e divergências) ---
+@st.cache_data
+def gerar_dados_pesagem():
+    # Preços para cálculo de perda
+    precos = {"COR-450": 120.50, "QUIM-088": 1.50, "QUIM-015": 4.20}
+    
+    # Receita Padrão (% sobre o peso do tecido)
+    receita = [
+        {"item": "COR-450 (Azul Reativo)", "perc": 3.2, "cod": "COR-450"},
+        {"item": "QUIM-088 (Sal de Cozinha)", "perc": 6.0, "cod": "QUIM-088"},
+        {"item": "QUIM-015 (Barrilha Leve)", "perc": 2.0, "cod": "QUIM-015"}
+    ]
+    
+    dados = []
+    # Gerando 10 Ordens de Produção
+    for i in range(1, 11):
+        op = f"OP-2026-{i:03d}"
+        peso_tecido = np.random.choice([100.0, 150.0, 200.0, 250.0])
+        
+        for comp in receita:
+            padrao = peso_tecido * (comp["perc"] / 100)
+            
+            # Simulando erro humano na pesagem: divergência entre -5% e +5%
+            fator_erro = np.random.uniform(-0.05, 0.05)
+            realizado = padrao * (1 + fator_erro)
+            
+            desvio_kg = realizado - padrao
+            desvio_perc = (desvio_kg / padrao) * 100
+            
+            # Custo gerado (apenas se pesou a mais. Se pesou a menos, o custo é de qualidade/reprocesso)
+            custo_perda = desvio_kg * precos[comp["cod"]] if desvio_kg > 0 else 0.0
+            
+            # Definindo status com base em tolerância de 1%
+            if abs(desvio_perc) <= 1.0:
+                status = "✅ OK"
+            elif desvio_perc > 1.0:
+                status = "⚠️ Excesso"
+            else:
+                status = "❌ Falta"
 
-if 'receitas' not in st.session_state:
-    # Receita Padrão de Exemplo
-    st.session_state.receitas = {
-        "Ficha #1024 - Azul Marinho": [
-            {"item": "COR-450", "tipo": "%", "valor": 3.2},
-            {"item": "QUIM-088", "tipo": "g/L", "valor": 60.0},
-            {"item": "QUIM-015", "tipo": "g/L", "valor": 20.0}
-        ]
-    }
+            dados.append({
+                "Ordem de Produção": op,
+                "Peso Tecido (kg)": peso_tecido,
+                "Componente": comp["item"],
+                "Padrão (kg)": round(padrao, 3),
+                "Realizado (kg)": round(realizado, 3),
+                "Desvio (kg)": round(desvio_kg, 3),
+                "Desvio (%)": round(desvio_perc, 2),
+                "Status": status,
+                "Custo Desperdício (R$)": round(custo_perda, 2)
+            })
+            
+    return pd.DataFrame(dados)
+
+# Carrega os dados
+df_pesagens = gerar_dados_pesagem()
 
 # --- INTERFACE PRINCIPAL ---
-st.title("🚀 Sistema de Gestão de Banhos e Receituários")
+st.title("🏭 ERP Têxtil - Gestão de Cozinha de Cores")
 st.markdown("---")
 
-tab1, tab2, tab3 = st.tabs(["🏗️ Engenharia de Receitas", "⚖️ Operação de Pesagem", "📊 Dashboard de Assertividade"])
+# Criando as abas solicitadas
+aba1, aba2 = st.tabs(["📋 Histórico de Pesagens (Auditoria)", "📈 Gestão de Performance e Perdas"])
 
-# --- PILAR 1: ENGENHARIA E ASSERTIVIDADE NOS PREPAROS ---
-with tab1:
-    st.header("Cadastro Técnico de Receitas")
-    col1, col2 = st.columns([1, 2])
+# --- ABA 1: LISTAGEM DE OPERAÇÕES DE PESAGEM ---
+with aba1:
+    st.header("Histórico de Apontamentos por Ordem de Produção")
+    st.markdown("Lista das últimas 10 OPs executadas para a receita **Ficha #1024 - Azul Marinho**. Compare o padrão teórico com o peso real aferido na balança.")
     
-    with col1:
-        nome_receita = st.text_input("Nome da Nova Receita", "Ficha #1025 - Verde Militar")
-        relacao_banho = st.number_input("Relação de Banho (1:X)", value=10)
-        if st.button("Salvar Estrutura"):
-            st.success("Estrutura da receita salva com sucesso!")
+    # Filtro opcional por OP
+    op_filtro = st.multiselect("Filtrar por Ordem de Produção:", options=df_pesagens["Ordem de Produção"].unique())
+    df_exibicao = df_pesagens if not op_filtro else df_pesagens[df_pesagens["Ordem de Produção"].isin(op_filtro)]
+    
+    # Função para colorir a tabela
+    def colorir_linhas(row):
+        if "Excesso" in row["Status"]:
+            return ['background-color: #ffcccc'] * len(row)
+        elif "Falta" in row["Status"]:
+            return ['background-color: #ffe6cc'] * len(row)
+        return [''] * len(row)
 
-    with col2:
-        st.subheader("Itens da Receita")
-        st.table(st.session_state.db_insumos[['Codigo', 'Descricao']])
-
-# --- PILAR 2: INTERFACE DE OPERAÇÃO (PESAGEM ASSISTIDA) ---
-with tab2:
-    st.header("Execução de Banho (Chão de Fábrica)")
-    
-    # Simulação de Ordem de Produção
-    op_selecionada = st.selectbox("Selecione a OP (Ordem de Produção)", ["OP-2024-001 (Algodão 200kg)", "OP-2024-002 (Poliéster 150kg)"])
-    peso_tecido = 200.0 if "200kg" in op_selecionada else 150.0
-    
-    st.info(f"Peso do Lote: **{peso_tecido} kg** | Receita Vinculada: **#1024 - Azul Marinho**")
-    
-    # Cálculo em tempo real
-    st.subheader("Itens para Preparação")
-    
-    dados_preparo = []
-    for i in st.session_state.receitas["Ficha #1024 - Azul Marinho"]:
-        # Cálculo: Se %, multiplica pelo peso. Se g/L, multiplica pelo volume de água (peso * relacao_banho)
-        qtd_teorica = (peso_tecido * (i['valor']/100)) if i['tipo'] == "%" else (peso_tecido * 10 * i['valor'] / 1000)
-        dados_preparo.append({
-            "Insumo": i['item'],
-            "Qtd Teórica (kg)": round(qtd_teorica, 3),
-            "Status": "Aguardando"
-        })
-    
-    df_preparo = pd.DataFrame(dados_preparo)
-    
-    # Simulando a balança
-    item_atual = st.selectbox("Selecione o item para pesagem atual", df_preparo["Insumo"])
-    qtd_alvo = df_preparo[df_preparo["Insumo"] == item_atual]["Qtd Teórica (kg)"].values[0]
-    
-    col_bal1, col_bal2 = st.columns(2)
-    with col_bal1:
-        st.metric(label="Peso Alvo (Teórico)", value=f"{qtd_alvo} kg")
-        peso_real = st.number_input("LEITURA DA BALANÇA (kg)", value=0.0, step=0.001)
-    
-    with col_bal2:
-        # Lógica de Assertividade (Trava de Segurança)
-        margem = 0.01 # 1%
-        erro = abs(peso_real - qtd_alvo)
-        assertividade = (1 - (erro/qtd_alvo)) * 100 if peso_real > 0 else 0
-        
-        if peso_real == 0:
-            st.warning("Aguardando estabilização da balança...")
-        elif qtd_alvo * (1-margem) <= peso_real <= qtd_alvo * (1+margem):
-            st.success(f"DENTRO DA TOLERÂNCIA! Assertividade: {assertividade:.2f}%")
-            if st.button("Confirmar Pesagem e Baixar Estoque"):
-                st.balloons()
-        else:
-            st.error(f"FORA DA TOLERÂNCIA! Erro de {erro:.3f}kg. Corrija o peso.")
-
-# --- PILAR 3: DASHBOARD DE BENEFÍCIOS ESPERADOS ---
-with tab3:
-    st.header("Gestão de Performance e Perdas")
-    
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Redução de Reprocessos", "12%", "-2% este mês")
-    c2.metric("Assertividade Média", "99.4%", "+5.2% vs Manual")
-    c3.metric("Economia de Corantes", "R$ 4.500,00", "Baseado em precisão")
-
-    # Gráfico de exemplo de erros humanos evitados
-    st.subheader("Histórico de Assertividade por Turno")
-    chart_data = pd.DataFrame(
-        np.random.uniform(95, 100, size=(20, 3)),
-        columns=['Turno A', 'Turno B', 'Turno C']
+    # Exibindo o DataFrame estilizado
+    st.dataframe(
+        df_exibicao.style.apply(colorir_linhas, axis=1).format({
+            "Padrão (kg)": "{:.3f}", 
+            "Realizado (kg)": "{:.3f}",
+            "Desvio (kg)": "{:.3f}",
+            "Desvio (%)": "{:.2f}%",
+            "Custo Desperdício (R$)": "R$ {:.2f}"
+        }),
+        use_container_width=True,
+        height=500
     )
-    st.line_chart(chart_data)
+
+# --- ABA 2: GESTÃO DE PERFORMANCE E PERDAS ---
+with aba2:
+    st.header("Dashboard de Performance e Perdas Financeiras")
+    
+    # Métricas Globais
+    total_ops = df_pesagens["Ordem de Produção"].nunique()
+    custo_total_perdas = df_pesagens["Custo Desperdício (R$)"].sum()
+    desvio_maximo = df_pesagens["Desvio (%)"].max()
+    acertos = df_pesagens[df_pesagens["Status"] == "✅ OK"].shape[0]
+    total_pesagens = df_pesagens.shape[0]
+    taxa_assertividade = (acertos / total_pesagens) * 100
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total de OPs Analisadas", total_ops)
+    col2.metric("Taxa de Assertividade (Tolerância 1%)", f"{taxa_assertividade:.1f}%")
+    col3.metric("Custo Total de Desperdício", f"R$ {custo_total_perdas:.2f}")
+    col4.metric("Maior Desvio Encontrado", f"+{desvio_maximo:.1f}%")
+
+    st.markdown("---")
+
+    col_grafico, col_tabela = st.columns([3, 2])
+
+    with col_grafico:
+        st.subheader("Desvio em Kg por OP e Componente")
+        # Preparando dados para o gráfico de barras
+        df_grafico = df_pesagens.pivot(index="Ordem de Produção", columns="Componente", values="Desvio (kg)")
+        st.bar_chart(df_grafico)
+
+    with col_tabela:
+        st.subheader("Resumo de Perdas por Componente")
+        st.markdown("Visão financeira dos excessos de dosagem.")
+        
+        # Agrupando dados para resumo
+        df_resumo = df_pesagens.groupby("Componente").agg(
+            Total_Padrão_kg=("Padrão (kg)", "sum"),
+            Total_Realizado_kg=("Realizado (kg)", "sum"),
+            Custo_Perda_R$=("Custo Desperdício (R$)", "sum")
+        ).reset_index()
+        
+        st.dataframe(
+            df_resumo.style.format({
+                "Total_Padrão_kg": "{:.2f}",
+                "Total_Realizado_kg": "{:.2f}",
+                "Custo_Perda_R$": "R$ {:.2f}"
+            }),
+            use_container_width=True
+        )
+        
+    st.subheader("Tendência de Assertividade (% de Desvio)")
+    df_tendencia = df_pesagens.pivot(index="Ordem de Produção", columns="Componente", values="Desvio (%)")
+    st.line_chart(df_tendencia)
